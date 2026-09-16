@@ -1,0 +1,25 @@
+# Compiled binary
+/muse-cc
+/muse-cc.exe
+/muse-cc-*
+*.exe~
+
+# Local runtime data (config + SQLite db)
+/data/
+/_smoke*/
+
+# Build artifacts
+/internal/assets/dist/*
+!/internal/assets/dist/.gitkeep
+/dist/
+
+# Node / Vite
+/web/node_modules/
+/web/dist/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

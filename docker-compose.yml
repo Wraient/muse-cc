@@ -1,0 +1,14 @@
+name: muse-cc
+
+services:
+  muse-cc:
+    image: ghcr.io/kiowx/muse-cc:latest
+    container_name: muse-cc
+    restart: unless-stopped
+    ports:
+      - "8788:8788"
+    volumes:
+      - muse-cc-data:/data
+
+volumes:
+  muse-cc-data:

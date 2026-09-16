@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-900 text-slate-200 font-sans antialiased;
+    background-image: radial-gradient(
+        900px 500px at 100% -10%,
+        rgba(124, 92, 255, 0.12),
+        transparent 60%
+      ),
+      radial-gradient(700px 500px at -10% 0%, rgba(34, 211, 238, 0.08), transparent 55%);
+    background-attachment: fixed;
+  }
+  ::selection {
+    @apply bg-accent/40 text-white;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-ink-850/70 backdrop-blur-xl border border-white/[0.06] rounded-2xl shadow-card;
+  }
+  .glass-hover {
+    @apply transition-colors hover:border-white/[0.12];
+  }
+  .card {
+    @apply glass p-5;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
+      transition-all duration-150 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-gradient-to-br from-accent to-accent/70 text-white shadow-glow hover:from-accent-glow hover:to-accent;
+  }
+  .btn-ghost {
+    @apply btn bg-white/[0.04] border border-white/[0.06] text-slate-200 hover:bg-white/[0.08];
+  }
+  .input {
+    @apply w-full rounded-xl bg-ink-900/80 border border-white/[0.06] px-3 py-2 text-sm
+      text-slate-100 placeholder:text-slate-500 outline-none
+      focus:border-accent/60 focus:ring-2 focus:ring-accent/20 transition;
+  }
+  .label {
+    @apply block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium
+      bg-white/[0.05] border border-white/[0.06] text-slate-300;
+  }
+  .stat-value {
+    @apply text-2xl font-semibold text-white font-mono tabular-nums;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: content-box;
+}
