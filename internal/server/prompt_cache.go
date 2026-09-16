@@ -1,8 +1,8 @@
 package server
 
 import (
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 func promptCacheOptionsFromConfig(cfg *config.Config) proxy.PromptCacheOptions {

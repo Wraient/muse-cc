@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# claude-muse: run Claude Code against the muse-cc proxy using your NORMAL
+# ~/.claude config (same MCP servers, skills, memory, permissions) with just
+# the backend and model switched. Backend/model switch via claude's own
+# --settings/--model flags, which override settings.json (verified live).
+#
+# Usage: claude-muse [--upstream URL] [claude args...]
+#   --upstream URL | --upstream=URL   proxy base URL (default below)
+#   --model / --effort are claude's own flags: pass them through to pick a
+#   model or effort, or omit them and the defaults (contributor / max) are
+#   injected. Everything else passes through to `claude` untouched.
+#   Env ANTHROPIC_BASE_URL also sets the default backend.
+#
+# Rules: an explicit caller --settings wins untouched (combining it with
+# --upstream is an error); a caller ANTHROPIC_AUTH_TOKEN/ANTHROPIC_API_KEY
+# is never clobbered; the proxy is auto-started only when the effective
+# backend is this machine's :8788 muse-cc.
+set -u
+
+DEFAULT_UPSTREAM="http://127.0.0.1:8788"
+DEFAULT_MODEL="muse-spark-1.3-contributor"
+DEFAULT_EFFORT="max"
+DEFAULT_TOKEN="claude-muse"
+SERVICE="muse-cc.service"
+
+UPSTREAM="${ANTHROPIC_BASE_URL:-$DEFAULT_UPSTREAM}"
+UPSTREAM_GIVEN=0
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --upstream)
+      [ $# -ge 2 ] || { echo "claude-muse: --upstream needs a value" >&2; exit 2; }
+      UPSTREAM="$2"; UPSTREAM_GIVEN=1; shift 2;;
+    --upstream=*)
+      UPSTREAM="${1#--upstream=}"; UPSTREAM_GIVEN=1; shift;;
+    --) shift
+      while [ $# -gt 0 ]; do ARGS+=("$1"); shift; done;;
+    *) ARGS+=("$1"); shift;;
+  esac
+done
+
+# has_flag NAME [VALUE_VAR]: true if --NAME or --NAME=* in ARGS; when VALUE_VAR
+# is given, stores the flag's value (next arg or =suffix, empty if bare last).
+has_flag() {
+  local i
+  for ((i = 0; i < ${#ARGS[@]}; i++)); do
+    if [ "${ARGS[$i]}" = "--$1" ]; then
+      if [ $# -ge 2 ]; then
+        if [ $((i + 1)) -lt ${#ARGS[@]} ]; then printf -v "$2" '%s' "${ARGS[$((i + 1))]}"; else printf -v "$2" '%s' ""; fi
+      fi
+      return 0
+    fi
+    case "${ARGS[$i]}" in
+      --"$1"=*) if [ $# -ge 2 ]; then printf -v "$2" '%s' "${ARGS[$i]#--$1=}"; fi; return 0;;
+    esac
+  done
+  return 1
+}
+
+if has_flag settings && [ "$UPSTREAM_GIVEN" -eq 1 ]; then
+  echo "claude-muse: --upstream cannot be combined with claude's own --settings (settings win; put the backend there instead)" >&2
+  exit 2
+fi
+
+OUT=()
+EFF_MODEL="$DEFAULT_MODEL"
+if has_flag model; then
+  : # caller's --model passes through untouched (never inject a duplicate)
+  if has_flag model CALLER_MODEL && [ -n "$CALLER_MODEL" ]; then
+    EFF_MODEL="$CALLER_MODEL"   # mirror the caller's model into settings below
+  fi
+else
+  OUT+=(--model "$DEFAULT_MODEL")
+fi
+EFF_EFFORT="$DEFAULT_EFFORT"
+if has_flag effort; then
+  : # caller's --effort passes through untouched (never inject a duplicate)
+  if has_flag effort CALLER_EFFORT && [ -n "$CALLER_EFFORT" ]; then
+    EFF_EFFORT="$CALLER_EFFORT"   # mirror the caller's effort into settings below
+  fi
+else
+  OUT+=(--effort "$DEFAULT_EFFORT")
+fi
+
+# Inject backend via --settings unless the caller brought their own.
+if ! has_flag settings; then
+  if [ -n "${ANTHROPIC_AUTH_TOKEN:-}" ] || [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    TOKEN_JSON=""
+  else
+    TOKEN_JSON="$DEFAULT_TOKEN"
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    SETTINGS_JSON=$(python3 -c 'import json,sys;env={"ANTHROPIC_BASE_URL":sys.argv[1],"ANTHROPIC_MODEL":sys.argv[3]};tok=sys.argv[2];print(json.dumps({"effortLevel":sys.argv[4],"env":(env if not tok else dict(env,ANTHROPIC_AUTH_TOKEN=tok))}))' "$UPSTREAM" "$TOKEN_JSON" "$EFF_MODEL" "$EFF_EFFORT")
+  else
+    SETTINGS_JSON=$(printf '{"effortLevel":"%s","env":{"ANTHROPIC_BASE_URL":"%s","ANTHROPIC_MODEL":"%s"%s}}' "$EFF_EFFORT" "$UPSTREAM" "$EFF_MODEL" "${TOKEN_JSON:+,\"ANTHROPIC_AUTH_TOKEN\":\"$TOKEN_JSON\"}")
+  fi
+  OUT+=(--settings "$SETTINGS_JSON")
+fi
+
+# Auto-start the local proxy when it is the effective backend and is down.
+if ! has_flag settings && [[ "$UPSTREAM" =~ ^http://(127\.0\.0\.1|localhost):8788/?$ ]] && [ -z "${CLAUDE_MUSE_NO_AUTOSTART:-}" ]; then
+  if ! curl -sf -o /dev/null --max-time 3 "$UPSTREAM/v1/models" 2>/dev/null; then
+    if systemctl --user start "$SERVICE" >/dev/null 2>&1; then
+      for _ in $(seq 1 30); do
+        curl -sf -o /dev/null --max-time 2 "$UPSTREAM/v1/models" 2>/dev/null && break
+        sleep 0.5
+      done
+      if curl -sf -o /dev/null --max-time 3 "$UPSTREAM/v1/models" 2>/dev/null; then
+        echo "claude-muse: started $SERVICE" >&2
+      else
+        echo "claude-muse: warning: $UPSTREAM unreachable after starting $SERVICE (continuing anyway)" >&2
+      fi
+    else
+      echo "claude-muse: warning: $UPSTREAM unreachable, could not start $SERVICE (continuing anyway)" >&2
+    fi
+  fi
+fi
+
+# Resolve claude (GUI launchers often have a minimal PATH).
+CLAUDE=""
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE="claude"
+else
+  for c in "${HOME:-/home/wraient}/.npm-global/bin/claude" /usr/local/bin/claude /usr/bin/claude; do
+    if [ -x "$c" ]; then CLAUDE="$c"; break; fi
+  done
+fi
+if [ -z "$CLAUDE" ]; then
+  echo "claude-muse: \`claude\` CLI not found in PATH nor at ~/.npm-global/bin/claude" >&2
+  exit 127
+fi
+
+exec "$CLAUDE" "${OUT[@]}" "${ARGS[@]}"

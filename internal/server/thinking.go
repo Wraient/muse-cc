@@ -3,8 +3,8 @@ package server
 import (
 	"strings"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 func applyThinkingBudgetMapping(req *proxy.OpenAIRequest, areq *proxy.AnthropicRequest, targetModel string, cfg *config.Config) {

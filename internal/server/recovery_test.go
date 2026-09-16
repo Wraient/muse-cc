@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 const staleReasoningUpstreamErr = `{"model":"muse-spark-1.3-contributor-free","error":{"param":null,"type":"invalid_request_error","message":"Error from provider (Console): Upstream request failed: [invalid_request_error] reasoning ` +

@@ -1,4 +1,4 @@
-module github.com/Kiowx/muse-cc
+module github.com/Wraient/muse-cc
 
 go 1.24
 

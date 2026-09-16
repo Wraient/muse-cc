@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 func newTestAPI(t *testing.T, cfg *config.Config) http.Handler {

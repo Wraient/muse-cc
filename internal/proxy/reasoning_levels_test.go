@@ -126,3 +126,24 @@ func TestRequestEffortRoundTrip(t *testing.T) {
 		t.Error("invalid JSON must error")
 	}
 }
+
+func TestOutputConfigEffortRoundTrip(t *testing.T) {
+	raw := []byte(`{"model":"m","output_config":{"effort":"max"},"messages":[]}`)
+	eff, ok := ExtractOutputConfigEffort(raw)
+	if !ok || eff != "max" {
+		t.Fatalf("extract: %q %v", eff, ok)
+	}
+	out, err := SetOutputConfigEffort(raw, "xhigh")
+	if err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	if eff, ok := ExtractOutputConfigEffort(out); !ok || eff != "xhigh" {
+		t.Fatalf("round trip: %q %v (%s)", eff, ok, out)
+	}
+	if _, ok := ExtractOutputConfigEffort([]byte(`{"model":"m"}`)); ok {
+		t.Error("absent effort must report false")
+	}
+	if _, err := SetOutputConfigEffort([]byte(`{nope`), "x"); err == nil {
+		t.Error("invalid JSON must error")
+	}
+}

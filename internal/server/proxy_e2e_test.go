@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 // mockUpstream returns a test server that pretends to be Meta's /v1/chat/completions.

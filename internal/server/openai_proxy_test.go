@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 func newOpenAITestServer(t *testing.T, upstream http.Handler) (*Server, *store.Store, *httptest.Server) {

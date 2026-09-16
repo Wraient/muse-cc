@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 // invalidateCache, if set, is called after any key mutation so the auth

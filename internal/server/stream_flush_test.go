@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/config"
 )
 
 // flushCountingWriter records every Write and signals every Flush. It models

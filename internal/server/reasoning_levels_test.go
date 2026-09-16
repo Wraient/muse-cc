@@ -98,3 +98,19 @@ func TestClampPassthroughEffort(t *testing.T) {
 		t.Errorf("missing effort must pass through: %s", out)
 	}
 }
+
+func TestClampNativeOutputConfigEffort(t *testing.T) {
+	srv := New(nil, nil)
+	maxed := []byte(`{"model":"m","output_config":{"effort":"max"},"messages":[]}`)
+	if out := srv.clampNativeOutputConfigEffort(maxed, "muse-spark-1.3-contributor", "m"); !strings.Contains(string(out), `"effort":"xhigh"`) {
+		t.Errorf("max must clamp to xhigh: %s", out)
+	}
+	exact := []byte(`{"model":"m","output_config":{"effort":"xhigh"},"messages":[]}`)
+	if out := srv.clampNativeOutputConfigEffort(exact, "muse-spark-1.3-contributor", "m"); string(out) != string(exact) {
+		t.Errorf("exact effort must pass through byte-identical: %s", out)
+	}
+	absent := []byte(`{"model":"m","messages":[]}`)
+	if out := srv.clampNativeOutputConfigEffort(absent, "muse-spark-1.3-contributor", "m"); string(out) != string(absent) {
+		t.Errorf("missing output_config must pass through: %s", out)
+	}
+}

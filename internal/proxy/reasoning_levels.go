@@ -288,3 +288,49 @@ func SetRequestEffort(reqBody []byte, effort string) ([]byte, error) {
 	}
 	return json.Marshal(payload)
 }
+
+// ExtractOutputConfigEffort reads output_config.effort (claude --effort on
+// the Messages surface) from a Messages request body. ok is false when the
+// field is absent or malformed (nothing to clamp).
+func ExtractOutputConfigEffort(reqBody []byte) (effort string, ok bool) {
+	var payload struct {
+		OutputConfig *struct {
+			Effort string `json:"effort"`
+		} `json:"output_config"`
+	}
+	if err := json.Unmarshal(reqBody, &payload); err != nil {
+		return "", false
+	}
+	if payload.OutputConfig == nil || strings.TrimSpace(payload.OutputConfig.Effort) == "" {
+		return "", false
+	}
+	return payload.OutputConfig.Effort, true
+}
+
+// SetOutputConfigEffort rewrites output_config.effort in a Messages request
+// body, preserving every other field byte-for-byte. It creates the
+// output_config object when absent.
+func SetOutputConfigEffort(reqBody []byte, effort string) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(reqBody, &payload); err != nil {
+		return nil, err
+	}
+	var outputConfig map[string]json.RawMessage
+	if raw, ok := payload["output_config"]; ok && len(raw) > 0 {
+		if err := json.Unmarshal(raw, &outputConfig); err != nil {
+			return nil, err
+		}
+	} else {
+		outputConfig = map[string]json.RawMessage{}
+	}
+	encoded, err := json.Marshal(effort)
+	if err != nil {
+		return nil, err
+	}
+	outputConfig["effort"] = encoded
+	payload["output_config"], err = json.Marshal(outputConfig)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(payload)
+}

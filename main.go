@@ -24,10 +24,10 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/Kiowx/muse-cc/internal/assets"
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/server"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/assets"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/server"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 func main() {

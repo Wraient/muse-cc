@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 // recoveryMaxErrBody caps how much of an upstream error body is buffered for

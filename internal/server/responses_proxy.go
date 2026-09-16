@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 // ResponsesProxy handles POST /v1/responses for Codex and other Responses API

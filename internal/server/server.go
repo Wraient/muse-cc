@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/api"
-	"github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
-	"github.com/Kiowx/muse-cc/internal/store"
+	"github.com/Wraient/muse-cc/internal/api"
+	"github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 // Server is the top-level HTTP server. It owns the config, store, and the

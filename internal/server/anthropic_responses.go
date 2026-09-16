@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 // bridgeSessionKey returns the sticky upstream-selection key for the bridge,

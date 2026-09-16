@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	cfgpkg "github.com/Kiowx/muse-cc/internal/config"
-	"github.com/Kiowx/muse-cc/internal/proxy"
-	"github.com/Kiowx/muse-cc/internal/store"
+	cfgpkg "github.com/Wraient/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/store"
 )
 
 // Proxy handles POST /v1/messages. Native Anthropic-capable target models go
@@ -169,6 +169,9 @@ func (s *Server) proxyNativeAnthropic(
 	// Meta 400s `thinking: {"type": "disabled"}` (it maps to the rejected
 	// effort "none"); an absent field means the same thing and 200s.
 	upBody = proxy.StripDisabledThinking(upBody, targetModel)
+	// Meta shares one effort scale across surfaces: output_config.effort=max
+	// 400s while xhigh 200s, so clamp to the model maximum (never fail).
+	upBody = s.clampNativeOutputConfigEffort(upBody, targetModel, areq.Model)
 
 	upURL := strings.TrimRight(upstream, "/") + "/v1/messages"
 	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upURL, bytes.NewReader(upBody))

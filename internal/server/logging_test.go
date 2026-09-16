@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Kiowx/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/config"
 )
 
 func TestWithLoggingRecoversAnthropicPanic(t *testing.T) {

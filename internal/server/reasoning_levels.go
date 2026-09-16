@@ -26,7 +26,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 // builtinEffortFamilies maps lowercase model-id prefixes to live-verified
@@ -185,6 +185,31 @@ func (s *Server) clampPassthroughEffort(upBody []byte, targetModel, incomingMode
 		return upBody
 	}
 	log.Printf("muse-cc: clamped reasoning.effort %q -> %q model=%s target=%s",
+		effort, clamped, incomingModel, targetModel)
+	return fixed
+}
+
+// clampNativeOutputConfigEffort normalizes a client-supplied
+// output_config.effort (claude --effort on the Messages surface) into the
+// target model's known scale. Meta shares one effort scale across surfaces:
+// output_config.effort=xhigh 200s while max 400s (verified live 2026-09-16),
+// so max clamps to the model's maximum exactly like reasoning.effort.
+// Requests without the field pass through untouched. Never errors: on any
+// surprise the original body is returned.
+func (s *Server) clampNativeOutputConfigEffort(upBody []byte, targetModel, incomingModel string) []byte {
+	effort, ok := proxy.ExtractOutputConfigEffort(upBody)
+	if !ok {
+		return upBody
+	}
+	clamped := proxy.ClampEffort(effort, s.levelsForModel(targetModel))
+	if clamped == effort {
+		return upBody
+	}
+	fixed, err := proxy.SetOutputConfigEffort(upBody, clamped)
+	if err != nil {
+		return upBody
+	}
+	log.Printf("muse-cc: clamped output_config.effort %q -> %q model=%s target=%s",
 		effort, clamped, incomingModel, targetModel)
 	return fixed
 }

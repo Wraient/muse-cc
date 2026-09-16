@@ -52,6 +52,12 @@ Claude Code's default `claude-*` model ids are mapped to
 `muse-spark-1.3-contributor` automatically; explicit `muse-*` ids pass
 through verbatim. Prefer an explicit model? `export ANTHROPIC_MODEL=muse-spark-1.3`.
 
+Heads-up: if your `~/.claude/settings.json` pins `env.ANTHROPIC_BASE_URL`
+(e.g. to another proxy), that wins over shell exports — use the
+`claude-muse` launcher (§10) instead, which overrides backend and model
+via claude's own `--settings`/`--model` flags while keeping your normal
+config (same MCP, skills, memory).
+
 Build from source: `./build.sh` (panel + embedded binary) or
 `go build -o /tmp/muse-cc-stage .` for a backend-only binary.
 
@@ -127,9 +133,12 @@ Resulting behavior:
   from upstream `400`s into `<datadir>/reasoning-levels.json`, and demotes
   rejected tops — all best-effort, never a failed request. The Anthropic
   bridge defaults to `minimal` effort for fast plain turns.
-- Heads-up: Meta spends ~13 reasoning tokens before the first content token
-  at default effort, so tiny `max_tokens` budgets (≤16) can return empty
-  content with `finish_reason=length`. The panel test probe uses 64.
+- Heads-up: Meta reasons heavily before the first content token (100+
+  thinking tokens even on trivial prompts at default effort, 1600+ on big
+  ones), so small `max_tokens` budgets return empty content with
+  `length`/`max_tokens` stop — even 128 is not enough; use ≥1024 for
+  probes. The panel test probe uses 64 and can legitimately come back
+  empty for this reason.
 
 ## 6. Web search
 
@@ -152,8 +161,11 @@ natively by Meta (verified 200) and passed through untouched.
 - Streams relay bytes unbuffered with a flush on every write; response
   headers (`text/event-stream`, `no-cache`, `X-Accel-Buffering: no`) go out
   the moment the upstream connects, so `message_start` reaches the client
-  with no proxy-added delay. Measured direct-to-Meta TTFB: ~1.8 s
-  (Messages SSE), ~2.6 s (Chat SSE).
+  with no proxy-added delay. Measured header TTFB through the proxy:
+  ~1–2.5 s (Messages SSE), ~1.2–2.8 s (Chat SSE). Time-to-first-*text*
+  is longer on big tasks (~25 s for a ~1200-word guide) because upstream
+  thinking is redacted and precedes all text — that gap is Meta reasoning,
+  not proxy delay.
 - The Responses relay strips only `event: ping` keepalive frames (some
   clients fail the turn on the unknown variant); SSE `:` comments pass
   through as keepalives.
@@ -198,9 +210,10 @@ with an error); verify the unit with
 |---|---|
 | `401` from upstream | Key rejected: check `muse login` freshness, `MUSE_API_KEY` value, or pool entries. The `dca:` credential never works on the model API — sync only adopts `api_key`. |
 | `404 model_not_found` | Non-`muse-*` target reached Meta verbatim; check Model Routes (the default catch-all prevents this). |
-| Empty content, `length`/`max_tokens` stop | Reasoning ate the budget; raise `max_tokens` (≥64 for probes) or lower effort. |
+| Empty content, `length`/`max_tokens` stop | Reasoning ate the budget; raise `max_tokens` (≥1024 — even 128 returns empty on this model) or lower effort. |
 | `400` on Messages with `stop_sequences`/`top_k` | Meta rejects those fields (documented); drop them client-side. |
 | `400 reasoning_effort 'none' …` | Meta rejects `thinking: {"type": "disabled"}` (it maps to effort `none`). The proxy strips that block for `muse-*` targets automatically; `enabled` with `budget_tokens < max_tokens` passes through and works. |
+| `400` with `--effort max` | Meta rejects effort `max` on every surface (verified: `xhigh` 200s, `max` 400s). The proxy clamps `max`→`xhigh` automatically — `reasoning.effort`, `output_config.effort`, and thinking-budget bridges — so `max` always means "most thinking this model allows". |
 | `bind: address already in use` | A second copy on `:8788` (repo cwd, `go run`, stale staging). Kill it; the service owns the port. |
 | Panel shows "Not configured" | No key anywhere: `muse login`, or set `MUSE_API_KEY`, or add an upstream row. |
 | `Text file busy` on deploy | Stop the service before copying the binary over it. |
@@ -208,3 +221,84 @@ with an error); verify the unit with
 
 Logs: `journalctl --user -u muse-cc -f`. Request history lives in the
 panel (Logs page) and `<datadir>/muse-cc.db`.
+
+## 10. External launchers (t3code): `claude-muse`
+
+`scripts/claude-muse` (installed as a symlink at
+`~/.local/bin/claude-muse`) runs the Claude Code CLI against this proxy
+while keeping your **normal `~/.claude` config** — same MCP servers,
+skills, memory, permissions — with only backend and model switched via
+claude's own `--settings`/`--model` flags (verified to override
+`settings.json`). Point t3code's "another client" at it:
+
+- **Binary:** `/home/wraient/.local/bin/claude-muse`
+- **Launch args:** ` [--upstream URL] [claude args...]` —
+  `--upstream` (or `=` form) sets the backend
+  (default `http://127.0.0.1:8788`, `ANTHROPIC_BASE_URL` also works);
+  `--model`/`--effort` are claude's own flags, passed straight through
+  (defaults `muse-spark-1.3-contributor` / `max` are injected when
+  omitted, and mirrored into the injected settings for settings-reading
+  paths); everything else passes through untouched
+  (e.g. `-p "prompt" --max-turns 5`)
+- **Env overrides (optional):** `ANTHROPIC_AUTH_TOKEN` /
+  `ANTHROPIC_API_KEY` (never clobbered when set),
+  `CLAUDE_MUSE_NO_AUTOSTART=1`
+
+Rules: an explicit caller `--settings` wins untouched (combining it with
+`--upstream` is an error); the proxy is auto-started only when the
+effective backend is this machine's `:8788`; `claude` is resolved even
+under minimal-PATH GUI launchers; exit code propagates via `exec`.
+Examples: `claude-muse -p "hi"` (defaults),
+`claude-muse --model muse-spark-1.2-contributor -p "hi"`,
+`claude-muse --upstream http://127.0.0.1:8787 --model <zen-id> -p "hi"`.
+
+## 11. File map & agent notes
+
+File map (repo + deployment):
+
+| Path | What |
+|---|---|
+| `main.go` | Entrypoint; `-data` flag, config+store init, route wiring |
+| `internal/config/` | Config load/merge/env, `museauth.go` (login-key sync) |
+| `internal/server/` | Route handlers: `proxy.go` (Messages native/translate), `openai_proxy.go`, `responses_proxy.go` + `responses_passthrough.go`, `web_search_proxy.go`, `reasoning_levels.go` (effort scale/clamp/learn), `thinking.go`, `auth.go` (client keys), `logging.go` (journal access log) |
+| `internal/proxy/` | Translators + pure JSON ops: `anthropic*.go`, `openai.go`, `responses*.go`, `reasoning_levels.go` (`ClampEffort`, extract/set effort helpers), `video.go` guards, `models.go` (live list + TTL) |
+| `internal/store/` | SQLite request log + client API keys |
+| `internal/api/` `internal/assets/` `internal/metrics/` | Panel REST API, embedded SPA serving, counters |
+| `web/` | React panel source (`npm run build` → `internal/assets/dist/`, git-ignored) |
+| `scripts/claude-muse` | t3code/CLI launcher (symlinked to `~/.local/bin/claude-muse`) |
+| `build.sh` / `Dockerfile` / `.github/workflows/` | Panel+Go build, container, CI (`go test ./...` + `go build`) |
+| `~/.local/bin/muse-cc` | Live binary (systemd runs this, not the repo) |
+| `~/.config/systemd/user/muse-cc.service` | User unit (listens on `:8788` — never `:8787`, that is opencode-cc) |
+| `~/.config/muse-cc/env` (600) + `README.md` (symlink here) | Key file + co-located docs |
+| `~/.local/share/muse-cc/` | Live data: `config.json`, `muse-cc.db*`, `reasoning-levels.json` |
+
+Notes for the next agent:
+
+- **Deploy ritual is mandatory for proxy changes**: `gofmt`/`go vet`/
+  `go test ./...` → staging binary on `127.0.0.1:18788` with fresh
+  `-data /tmp/mc-stage-data` → E2E (chat+stream+TTFB+websearch+models+
+  isolated `claude -p`) → stop service → back up `~/.local/bin/muse-cc`
+  to `.bak-muse-<YYYYMMDD>` → copy → start → `is-active` → smoke live
+  `:8788` → kill staging. Live `:8787` (opencode-cc) is never touched.
+- **Effort scale is clamp-based, not validated**: Meta rejects literal
+  `max`/`none` but lists them in error enums; the proxy clamps to the
+  per-model verified top (`xhigh` for `muse-spark`) on every path that
+  forwards effort (`reasoning.effort`, `output_config.effort`, thinking
+  bridges) and self-heals via invalid-effort learning + demote-retry.
+  Never "fix" a 400 by passing effort through raw — re-probe upstream
+  first with the sink-capture trick (`/tmp/cap-sink.py` pattern: dummy
+  400 server on a spare port shows exactly what the client sent).
+- **Thinking-budget rule**: `thinking.budget_tokens` must be `<`
+  `max_tokens` or Meta 400s; `thinking.disabled` is stripped for
+  `muse-*` for the same reason.
+- **Settings precedence**: `~/.claude/settings.json` `env` beats shell
+  env; only claude's `--settings`/`--model`/`--effort` CLI flags beat
+  settings — that is why `claude-muse` injects flags instead of exports.
+- **Model ids are backend-scoped**: `-free` ids 404 on Meta, `muse-*`
+  ids pass verbatim, `claude-*` maps to the default contributor model.
+- **Known benign warnings**: `[claude-code:unrecognized_model]` for
+  `muse-*` ids (works anyway, 200k assumed window); occasional `502`
+  on heavy non-stream turns (30 s upstream header timeout — stream).
+- **Never print secrets**: logs/answers carry key paths + lengths only;
+  request bodies in `<datadir>/muse-cc.db` may contain user prompts —
+  query metadata columns, not bodies, unless debugging wire shape.

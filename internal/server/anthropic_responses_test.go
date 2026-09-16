@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/config"
+	"github.com/Wraient/muse-cc/internal/config"
 )
 
 // mockResponsesUpstream pretends to be Meta's /v1/responses for a Responses-native

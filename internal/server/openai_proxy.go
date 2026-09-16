@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Kiowx/muse-cc/internal/proxy"
+	"github.com/Wraient/muse-cc/internal/proxy"
 )
 
 // OpenAIProxy handles POST /v1/chat/completions. Unlike Proxy, this endpoint
