@@ -161,7 +161,16 @@ func (s *Server) proxyNativeAnthropic(
 	stickyKey string,
 	start time.Time,
 ) {
-	upBody, err := proxy.PrepareAnthropicPromptCacheBody(body, targetModel, promptCacheOptionsFromConfig(s.cfg.Snapshot()))
+	// Resolve user-text video refs (plain .mp4 paths, [[video ...]] markers)
+	// into explicit video blocks first: Meta accepts the blocks but cannot
+	// read local disk, and without this the model goes in blind and falls
+	// back to frame-splitting the clip with tools.
+	resolved, err := proxy.ResolveNativeVideoRefs(body)
+	if err != nil {
+		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "video reference: "+err.Error())
+		return
+	}
+	upBody, err := proxy.PrepareAnthropicPromptCacheBody(resolved, targetModel, promptCacheOptionsFromConfig(s.cfg.Snapshot()))
 	if err != nil {
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return

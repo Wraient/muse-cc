@@ -218,6 +218,7 @@ with an error); verify the unit with
 | Panel shows "Not configured" | No key anywhere: `muse login`, or set `MUSE_API_KEY`, or add an upstream row. |
 | `Text file busy` on deploy | Stop the service before copying the binary over it. |
 | Slow first byte | Normal: Meta TTFB is ~2 s; the proxy adds nothing measurable. Check `reasoning.effort` for hot models. |
+| Model can't see a video / extracts frames itself | The clip never arrived: use an absolute `~/`-anchored `.mp4` path or `[[video …]]` in user text (relative paths are ignored by design). Native path now splices refs into video blocks — see §12. |
 
 Logs: `journalctl --user -u muse-cc -f`. Request history lives in the
 panel (Logs page) and `<datadir>/muse-cc.db`.
@@ -302,3 +303,24 @@ Notes for the next agent:
 - **Never print secrets**: logs/answers carry key paths + lengths only;
   request bodies in `<datadir>/muse-cc.db` may contain user prompts —
   query metadata columns, not bodies, unless debugging wire shape.
+
+## 12. Video
+
+Three ingress paths, all delivered natively (never frame-split):
+
+1. Plain absolute/`~/` `.mp4` path in user text
+   (`what happens in ~/clip.mp4?`) — read off disk, never touches the
+   client's context. Unresolvable paths stay plain text; relative paths
+   are ignored by design (the proxy owns no cwd).
+2. `[[video <src>]]` markers — remote URLs, `data:` URIs, or forced
+   paths. Unresolvable markers fail loudly (400), never silently drop.
+3. Explicit `{"type":"video"}` blocks (base64 mp4 or URL source).
+
+Only user-role text is scanned (assistant text and tool results are
+untouched, so an `ls` of `*.mp4` never becomes an attachment). Upstream
+takes mp4 only: files over 4 MB are ffmpeg-transcoded toward ~4 MB
+(full duration, lower resolution) and anything still over the 8 MB
+inline cap fails fast instead of hanging upstream. Per surface: the
+bridge emits `input_video` parts, the Chat translation emits `video_url`
+parts, and the native Messages path splices explicit video blocks
+(`ResolveNativeVideoRefs` — Meta accepts them, verified live).

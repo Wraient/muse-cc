@@ -4,29 +4,35 @@ package proxy
 //
 // Stock Anthropic clients (Claude Code, Codex) cannot emit video blocks —
 // the Messages API has no video type and the clients drop video attachments —
-// so the proxy accepts video two ways:
+// so the proxy accepts video three ways:
 //
 //  1. Explicit "video" content blocks (proxy-specific, same source shape as
 //     "image"): {"type":"video","source":{"type":"base64","media_type":
 //     "video/mp4","data":"..."}} or {"type":"video","source":{"type":"url",
 //     "url":"https://..."}}. A "document" block with a video/* base64 source
-//     is accepted the same way.
+//     is accepted the same way on the bridge/translated paths.
 //  2. Plain local .mp4 paths mentioned in user text (absolute or ~/ —
 //     exactly how you'd reference the file talking to Claude Code, e.g.
 //     "what happens in /home/u/clip.mp4?"). The proxy reads the file off
 //     disk, so the clip never transits the client's context window. Paths
 //     that don't resolve to a readable file are left as plain text.
+//     Relative paths are deliberately ignored (see localVideoPath).
 //  3. Explicit markers [[video <src>]] for remote URLs, inline data: URIs,
 //     or forcing a path: [[video https://example.com/a.mp4]].
 //
-// Both reach upstream as native input_video / video_url parts — never
-// frame-split. Upstream accepts mp4 only; inline payloads are capped at
-// maxVideoBytes (see anthropic_responses.go).
+// Every path delivers the clip natively — never frame-split. The bridge
+// emits input_video parts, the Chat translation emits video_url parts, and
+// the native Messages path splices explicit video blocks (Meta accepts
+// them; verified live 2026-09-17) via ResolveNativeVideoRefs. Upstream
+// accepts mp4 only; inline payloads are capped at maxVideoBytes (see
+// anthropic_responses.go); files over videoTranscodeThreshold are
+// ffmpeg-shrunk first when possible.
 
 import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -356,4 +362,149 @@ func readVideoFile(path string) (string, error) {
 	url := "data:video/mp4;base64," + base64.StdEncoding.EncodeToString(raw)
 	videoCachePut(videoCacheKey(path, fi), url)
 	return url, nil
+}
+
+// ResolveNativeVideoRefs rewrites user-text video references (plain .mp4
+// paths and [[video ...]] markers) into explicit {"type":"video"} blocks so
+// Meta's /v1/messages — which accepts video blocks but cannot read local
+// disk — receives the clip inline. Only user-role (or role-less) string
+// content and {type:text} blocks are scanned; assistant text and tool
+// results pass through untouched (an ls of *.mp4 must not become an
+// attachment). Bodies without video refs return byte-identical. An
+// unresolvable explicit marker is an error (fail loudly, like the bridge);
+// malformed envelopes are returned untouched (the caller validates JSON).
+func ResolveNativeVideoRefs(reqBody []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(reqBody, &payload); err != nil {
+		return reqBody, nil
+	}
+	rawMsgs, ok := payload["messages"]
+	if !ok {
+		return reqBody, nil
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(rawMsgs, &messages); err != nil {
+		return reqBody, nil
+	}
+	changed := false
+	for i, m := range messages {
+		var role string
+		_ = json.Unmarshal(m["role"], &role)
+		if role == "assistant" {
+			continue
+		}
+		c, ok := m["content"]
+		if !ok {
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(c, &text); err == nil {
+			if !maybeHasVideoRef(text) {
+				continue
+			}
+			spans, err := splitVideoMarkers(text)
+			if err != nil {
+				return nil, err
+			}
+			blocks := nativeVideoBlocks(spans)
+			if blocks == nil {
+				continue
+			}
+			nb, err := json.Marshal(blocks)
+			if err != nil {
+				return nil, err
+			}
+			m["content"] = nb
+			messages[i] = m
+			changed = true
+			continue
+		}
+		var blocks []map[string]json.RawMessage
+		if err := json.Unmarshal(c, &blocks); err != nil {
+			continue
+		}
+		var out []any
+		dirty := false
+		for _, b := range blocks {
+			var typ, t string
+			_ = json.Unmarshal(b["type"], &typ)
+			if typ != "text" || json.Unmarshal(b["text"], &t) != nil || !maybeHasVideoRef(t) {
+				out = append(out, b)
+				continue
+			}
+			spans, err := splitVideoMarkers(t)
+			if err != nil {
+				return nil, err
+			}
+			nb := nativeVideoBlocks(spans)
+			if nb == nil {
+				out = append(out, b)
+				continue
+			}
+			out = append(out, nb...)
+			dirty = true
+		}
+		if !dirty {
+			continue
+		}
+		nb, err := json.Marshal(out)
+		if err != nil {
+			return nil, err
+		}
+		m["content"] = nb
+		messages[i] = m
+		changed = true
+	}
+	if !changed {
+		return reqBody, nil
+	}
+	nm, err := json.Marshal(messages)
+	if err != nil {
+		return nil, err
+	}
+	payload["messages"] = nm
+	return json.Marshal(payload)
+}
+
+// nativeVideoBlocks converts resolved spans to Messages content blocks,
+// dropping whitespace-only text like the bridge does. It returns nil when
+// no span carries video, letting callers keep the original bytes.
+func nativeVideoBlocks(spans []textVideoSpan) []any {
+	hasVideo := false
+	for _, s := range spans {
+		if s.isVideo {
+			hasVideo = true
+			break
+		}
+	}
+	if !hasVideo {
+		return nil
+	}
+	var out []any
+	for _, s := range spans {
+		if s.isVideo {
+			out = append(out, nativeVideoBlock(s.videoURL))
+			continue
+		}
+		if strings.TrimSpace(s.text) != "" {
+			out = append(out, map[string]any{"type": "text", "text": s.text})
+		}
+	}
+	return out
+}
+
+// nativeVideoBlock builds the {"type":"video"} block Meta's /v1/messages
+// accepts (verified live 2026-09-17): local files inline as base64 mp4,
+// remote URLs passed as url sources.
+func nativeVideoBlock(url string) map[string]any {
+	if u := strings.ToLower(url); strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+		return map[string]any{"type": "video", "source": map[string]any{"type": "url", "url": url}}
+	}
+	media, data := "video/mp4", url
+	if rest, ok := strings.CutPrefix(url, "data:"); ok {
+		if mt, b64, ok := strings.Cut(rest, ";base64,"); ok {
+			media, data = mt, b64
+		}
+	}
+	return map[string]any{"type": "video", "source": map[string]any{"type": "base64", "media_type": media, "data": data}}
 }

@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1037,4 +1039,40 @@ data: {"type":"message_stop"}
 			row.OutputTokens == 3 &&
 			row.StopReason == "end_turn"
 	})
+}
+
+func TestNativePathResolvesVideoRefs(t *testing.T) {
+	clip := filepath.Join(t.TempDir(), "clip.mp4")
+	if err := os.WriteFile(clip, []byte{0x00, 0x00, 0x00, 0x18}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var gotBody []byte
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"msg1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"saw it"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	defer upstream.Close()
+
+	cfg := config.Default()
+	cfg.UpstreamBase = upstream.URL
+	cfg.MuseAPIKey = "test-key"
+	cfg.NativeAnthropic = true
+	cfg.ModelMappings = []config.ModelMapping{{Match: "*", Target: "muse-spark-1.3-contributor"}}
+	srv, _ := newTestServerWithCfg(t, cfg)
+
+	body := []byte(`{"model":"client-model","max_tokens":64,"messages":[{"role":"user","content":"what is in ` + clip + `?"}]}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	srv.Proxy().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(string(gotBody), `"type":"video"`) ||
+		!strings.Contains(string(gotBody), `"media_type":"video/mp4"`) {
+		t.Errorf("native upstream body must carry a spliced video block: %s", gotBody)
+	}
+	if !strings.Contains(string(gotBody), "what is in") {
+		t.Errorf("surrounding text must be preserved: %s", gotBody)
+	}
 }

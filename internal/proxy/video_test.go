@@ -417,3 +417,100 @@ func TestTranscodeShrinks(t *testing.T) {
 		t.Errorf("transcode output does not look like mp4 (%d bytes)", len(raw))
 	}
 }
+
+// extractNativeVideoBlocks extracts every {"type":"video"} block source from a
+// resolved Messages body.
+func extractNativeVideoBlocks(t *testing.T, body []byte) []AnthropicImageSource {
+	t.Helper()
+	var req struct {
+		Messages []struct {
+			Content []struct {
+				Type   string `json:"type"`
+				Text   string `json:"text"`
+				Source *struct {
+					Type      string `json:"type"`
+					MediaType string `json:"media_type"`
+					Data      string `json:"data"`
+					URL       string `json:"url"`
+				} `json:"source"`
+			} `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var out []AnthropicImageSource
+	for _, m := range req.Messages {
+		for _, b := range m.Content {
+			if b.Type != "video" || b.Source == nil {
+				continue
+			}
+			out = append(out, AnthropicImageSource{Type: b.Source.Type,
+				MediaType: b.Source.MediaType, Data: b.Source.Data, URL: b.Source.URL})
+		}
+	}
+	return out
+}
+
+func writeClip(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "clip.mp4")
+	if err := os.WriteFile(path, []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p'}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestNativePlainPathBecomesVideoBlock(t *testing.T) {
+	path := writeClip(t)
+	raw := []byte(`{"model":"m","messages":[{"role":"user","content":"what happens in ` + path + `?"}]}`)
+	out, err := ResolveNativeVideoRefs(raw)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	got := extractNativeVideoBlocks(t, out)
+	if len(got) != 1 || got[0].Type != "base64" || got[0].MediaType != "video/mp4" || got[0].Data == "" {
+		t.Fatalf("plain path must splice one base64 video block: %+v", got)
+	}
+	if !strings.Contains(string(out), "what happens in") {
+		t.Errorf("surrounding text must be preserved: %s", out)
+	}
+}
+
+func TestNativeMarkerURLBecomesURLBlock(t *testing.T) {
+	raw := []byte(`{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"[[video https://example.com/a.mp4]] describe"}]}]}`)
+	out, err := ResolveNativeVideoRefs(raw)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	got := extractNativeVideoBlocks(t, out)
+	if len(got) != 1 || got[0].Type != "url" || got[0].URL != "https://example.com/a.mp4" {
+		t.Fatalf("URL marker must splice one url video block: %+v", got)
+	}
+}
+
+func TestNativeNoRefsByteIdentical(t *testing.T) {
+	for _, raw := range []string{
+		`{"model":"m","messages":[{"role":"user","content":"just text"}]}`,
+		`{"model":"m","messages":[{"role":"assistant","content":"see /tmp/x.mp4 here"}]}`,
+		`{"model":"m","messages":[{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"wrote /tmp/x.mp4"}]}]}`,
+		`{"model":"m","messages":[{"role":"user","content":[{"type":"text","text":"relative clip.mp4 stays"}]}]}`,
+		`{"model":"m","nonsense":true}`,
+		`{nope`,
+	} {
+		out, err := ResolveNativeVideoRefs([]byte(raw))
+		if err != nil {
+			t.Fatalf("resolve %q: %v", raw, err)
+		}
+		if string(out) != raw {
+			t.Errorf("must pass through byte-identical: %q -> %q", raw, out)
+		}
+	}
+}
+
+func TestNativeBadMarkerErrors(t *testing.T) {
+	raw := []byte(`{"model":"m","messages":[{"role":"user","content":"look [[video /nonexistent/x.mp4]]"}]}`)
+	if _, err := ResolveNativeVideoRefs(raw); err == nil {
+		t.Error("expected error for unreadable marker path")
+	}
+}
