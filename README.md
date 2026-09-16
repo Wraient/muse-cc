@@ -200,6 +200,7 @@ with an error); verify the unit with
 | `404 model_not_found` | Non-`muse-*` target reached Meta verbatim; check Model Routes (the default catch-all prevents this). |
 | Empty content, `length`/`max_tokens` stop | Reasoning ate the budget; raise `max_tokens` (≥64 for probes) or lower effort. |
 | `400` on Messages with `stop_sequences`/`top_k` | Meta rejects those fields (documented); drop them client-side. |
+| `400 reasoning_effort 'none' …` | Meta rejects `thinking: {"type": "disabled"}` (it maps to effort `none`). The proxy strips that block for `muse-*` targets automatically; `enabled` with `budget_tokens < max_tokens` passes through and works. |
 | `bind: address already in use` | A second copy on `:8788` (repo cwd, `go run`, stale staging). Kill it; the service owns the port. |
 | Panel shows "Not configured" | No key anywhere: `muse login`, or set `MUSE_API_KEY`, or add an upstream row. |
 | `Text file busy` on deploy | Stop the service before copying the binary over it. |

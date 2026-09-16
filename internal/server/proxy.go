@@ -166,6 +166,9 @@ func (s *Server) proxyNativeAnthropic(
 		writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	// Meta 400s `thinking: {"type": "disabled"}` (it maps to the rejected
+	// effort "none"); an absent field means the same thing and 200s.
+	upBody = proxy.StripDisabledThinking(upBody, targetModel)
 
 	upURL := strings.TrimRight(upstream, "/") + "/v1/messages"
 	upReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, upURL, bytes.NewReader(upBody))

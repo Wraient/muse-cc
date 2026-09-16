@@ -921,6 +921,49 @@ func TestProxyNativeAnthropicNonStream(t *testing.T) {
 	})
 }
 
+func TestProxyNativeStripsDisabledThinkingForMeta(t *testing.T) {
+	// Meta 400s `thinking: {"type": "disabled"}` (it maps to the rejected
+	// effort "none"); the native path must strip it for muse-* targets.
+	var gotBody map[string]json.RawMessage
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode upstream request: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"id":"msg_meta","type":"message","role":"assistant","model":"muse-spark-1.3",
+			"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn",
+			"usage":{"input_tokens":3,"output_tokens":2}
+		}`)
+	})
+
+	srv, _, httpSrv := newOpenAITestServer(t, upstream)
+	srv.cfg.NativeAnthropic = true
+	srv.cfg.ModelMappings = []config.ModelMapping{
+		{Match: "client-model", Target: "muse-spark-1.3"},
+		{Match: "*", Target: ""},
+	}
+
+	body := `{
+		"model":"client-model",
+		"max_tokens":256,
+		"thinking":{"type":"disabled"},
+		"messages":[{"role":"user","content":"hi"}]
+	}`
+	resp, err := http.Post(httpSrv.URL+"/v1/messages", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d: %s", resp.StatusCode, raw)
+	}
+	if _, present := gotBody["thinking"]; present {
+		t.Fatalf("disabled thinking reached upstream: %s", gotBody["thinking"])
+	}
+}
+
 func TestProxyNativeAnthropicStream(t *testing.T) {
 	var expected strings.Builder
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
