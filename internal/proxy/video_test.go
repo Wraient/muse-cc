@@ -162,6 +162,10 @@ func TestBridgePlaceholderMarkersStayText(t *testing.T) {
 		"use [[video ...]] markers",
 		"use [[video <src>]] markers",
 		"e.g. [[video /home/u/clip.mp4]] in docs",
+		"`[[video ~/...]]` markers expand ~",
+		"see [[video /home/wraient/...]] in AGENTS.md",
+		"clip [[video ~/clip...mp4]] truncated",
+		"clip [[video …]] unicode ellipsis",
 	} {
 		body, err := ConvertAnthropicToResponsesBody(bridgeReq(userBlocks(
 			AnthropicContent{Type: "text", Text: in},

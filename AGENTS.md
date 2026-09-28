@@ -58,7 +58,9 @@
   hard dep); anything still over 8MB (`maxVideoBytes`) fails FAST with a
   clear error instead of hanging. Resolved videos are cached by
   path+size+mtime (4 entries) so repeat turns don't re-transcode.
-- `[[video ~/...]]` markers expand `~`; a `document` URL block only counts
+- Explicit video markers expand leading `~` to home (e.g. `[[video <~/clip.mp4>]]`
+  form — never write a literal path in docs: Claude Code injects AGENTS.md
+  into user-role text and a literal marker 400s every request); a `document` URL block only counts
   as video when its media type is empty or `video/*` (else upstream tries to
   download it as media → `media_url_origin_error` 404).
 - When touching video: E2E-test staging with the REAL 10MB file

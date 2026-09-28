@@ -74,6 +74,13 @@ type textVideoSpan struct {
 // [[video ...]] or [[video <src>]] appearing in design docs, code comments,
 // or example text that the user pasted into the conversation. Resolving
 // those would always fail; they must stay plain text.
+//
+// Ellipsis anywhere in the ref (ASCII "..." or Unicode "…") also means
+// placeholder: docs commonly write [[video ~/...]] or
+// [[video /home/wraient/...]] as shorthand, and Claude Code injects
+// AGENTS.md/project docs into user-role <system-reminder> text — so without
+// this, any project whose docs contain such an example 400s EVERY request
+// in that directory (Sep 2026 incident: opencode-cc AGENTS.md).
 func isPlaceholderVideoRef(ref string) bool {
 	t := strings.Trim(ref, `"' `)
 	switch t {
@@ -83,6 +90,10 @@ func isPlaceholderVideoRef(ref string) bool {
 	}
 	// Any angle brackets = template placeholder, not a path/URL.
 	if strings.ContainsAny(t, "<>") {
+		return true
+	}
+	// Ellipsis = truncated/doc example, never a real file.
+	if strings.Contains(t, "...") || strings.Contains(t, "…") {
 		return true
 	}
 	return false
