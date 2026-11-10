@@ -66,6 +66,19 @@ func TestMaybeSyncMuseAuthAdoptsAndRefreshes(t *testing.T) {
 	}
 }
 
+func TestParseKeychainSecret(t *testing.T) {
+	raw := `{"secret_schema_version":1,"api_key":"LLM|kc-key-456","access_token":"dca:oauth-not-for-api"}`
+	if got := parseKeychainSecret(raw); got != "LLM|kc-key-456" {
+		t.Fatalf("parseKeychainSecret = %q", got)
+	}
+	if got := parseKeychainSecret(`{"access_token":"dca:only"}`); got != "" {
+		t.Fatalf("access-token-only = %q, want empty", got)
+	}
+	if got := parseKeychainSecret("not json"); got != "" {
+		t.Fatalf("corrupt = %q, want empty", got)
+	}
+}
+
 func TestMaybeSyncMuseAuthDisabled(t *testing.T) {
 	path := writeMuseAuth(t, "LLM|ignored")
 	t.Setenv("MUSE_AUTH_PATH", path)

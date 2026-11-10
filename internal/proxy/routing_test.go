@@ -25,10 +25,13 @@ func TestIsResponsesNativeModel(t *testing.T) {
 		"muse-spark-1.2":                           true,
 		"MUSE-Spark-1.3-Contributor-Free":          true, // case-insensitive
 		"provider/muse-spark-1.3-contributor-free": true, // prefix stripped
-		"gpt-5-mini":       false,
-		"big-pickle":       false,
-		"claude-fable-5-1": false,
-		"":                 false,
+		"muse-ember-1.0":                           true, // Responses is the only open surface
+		"muse-wonder-1.0":                          true,
+		"muse-wonder-1.0-contributor":              true,
+		"gpt-5-mini":                               false,
+		"big-pickle":                               false,
+		"claude-fable-5-1":                         false,
+		"":                                         false,
 	}
 	for in, want := range cases {
 		if got := IsResponsesNativeModel(in); got != want {

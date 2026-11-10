@@ -16,14 +16,20 @@ func IsNativeAnthropicModel(model string) bool {
 }
 
 // IsResponsesNativeModel reports whether a model id is served on the
-// upstream Responses API (/v1/responses). Meta serves muse-spark* there
+// upstream Responses API (/v1/responses). Meta serves muse-* there
 // natively (it is Meta's recommended full-featured surface: reasoning
 // replay, tool loops, search grounding), so /v1/responses requests for
 // these models are passed through instead of translated.
+//
+// The Responses surface is also the only one the Muse Code
+// subscription key may use for Ember and Wonder: /v1/messages and
+// /v1/chat/completions return client_attestation_denied for those
+// families while /v1/responses returns 200 (live-verified 2026-11-09).
+// Spark worked on every surface, which hid this split.
 func IsResponsesNativeModel(model string) bool {
 	model = strings.TrimSpace(strings.ToLower(model))
 	if slash := strings.IndexByte(model, '/'); slash >= 0 {
 		model = model[slash+1:]
 	}
-	return strings.HasPrefix(model, "muse-spark")
+	return strings.HasPrefix(model, "muse-")
 }

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -52,7 +54,46 @@ func LoadMuseAPIKey(path string) string {
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(meta.APIKey)
+	if key := strings.TrimSpace(meta.APIKey); key != "" {
+		return key
+	}
+	// Schema v2 on macOS stores the secret in the login Keychain and
+	// keeps only metadata in auth.json. Read it from there.
+	var metaFull struct {
+		Providers map[string]struct {
+			Storage string `json:"storage"`
+		} `json:"providers"`
+	}
+	if err := json.Unmarshal(raw, &metaFull); err == nil {
+		if p, ok := metaFull.Providers["meta"]; ok && p.Storage == "keychain" {
+			return loadMuseAPIKeyFromKeychain()
+		}
+	}
+	return ""
+}
+
+// parseKeychainSecret extracts api_key from the Keychain secret JSON.
+// The OAuth access_token in the same blob is never returned.
+func parseKeychainSecret(raw string) string {
+	var doc struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &doc); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(doc.APIKey)
+}
+
+func loadMuseAPIKeyFromKeychain() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	out, err := exec.Command("security", "find-generic-password",
+		"-s", "ai.meta.dev.credentials", "-a", "meta", "-w").Output()
+	if err != nil {
+		return ""
+	}
+	return parseKeychainSecret(string(out))
 }
 
 // maybeSyncMuseAuth refreshes the effective upstream key from the Muse CLI
